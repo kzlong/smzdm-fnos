@@ -1,0 +1,6 @@
+.upstream/
+dist/
+__pycache__/
+*.pyc
+*.fpk
+.DS_Store

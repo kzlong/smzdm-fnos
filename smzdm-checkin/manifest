@@ -1,0 +1,15 @@
+appname               = smzdm-checkin
+version               = 1.0.0
+display_name          = 什么值得买签到
+desc                  = 管理什么值得买账号、每日签到时间和签到记录
+platform              = x86
+source                = thirdparty
+maintainer            = kzlong
+maintainer_url        = https://github.com/kzlong/fnos-fan-control-qnap
+distributor           = kzlong
+distributor_url       = https://github.com/kzlong/fnos-fan-control-qnap
+os_min_version        = 1.1.3100
+install_dep_apps      = python312
+ctl_stop              = true
+desktop_uidir         = ui
+desktop_applaunchname = smzdm-checkin.main

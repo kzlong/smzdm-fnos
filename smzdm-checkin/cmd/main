@@ -1,0 +1,67 @@
+#!/bin/sh
+
+set -eu
+umask 077
+
+app_dir=$TRIM_APPDEST
+var_dir=$TRIM_PKGVAR
+socket=$app_dir/app.sock
+pid_file=$var_dir/checkin.pid
+python=/var/apps/python312/target/bin/python3
+mkdir -p "$var_dir"
+exec 9>"$var_dir/lifecycle.lock"
+flock -x 9
+
+running() {
+    [ -r "$pid_file" ] || return 1
+    read -r pid < "$pid_file" || return 1
+    case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+    kill -0 "$pid" 2>/dev/null || return 1
+    tr '\000' '\n' < "/proc/$pid/cmdline" 2>/dev/null | grep -Fxq -- "$app_dir/service.py"
+}
+
+case "$1" in
+    start)
+        if running; then
+            [ -S "$socket" ]
+            exit
+        fi
+        if [ ! -x "$python" ]; then
+            if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+                printf '%s\n' '缺少应用中心的 Python 3.12 运行时。' > "${TRIM_TEMP_LOGFILE:-}"
+            fi
+            exit 1
+        fi
+        cd "$app_dir"
+        rm -f -- "$socket"
+        export PYTHONPATH="$app_dir/vendor" PYTHONDONTWRITEBYTECODE=1
+        "$python" "$app_dir/service.py" "$var_dir/private" </dev/null >>"$var_dir/service.log" 2>&1 9>&- &
+        printf '%s\n' "$!" > "$pid_file"
+        for attempt in $(seq 1 25); do
+            if [ -S "$socket" ] && running; then exit 0; fi
+            if ! kill -0 "$(cat "$pid_file")" 2>/dev/null; then break; fi
+            sleep 0.2
+        done
+        if running; then kill -TERM "$pid"; fi
+        if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+            printf '%s\n' '签到服务启动失败，请检查应用日志 service.log。' > "${TRIM_TEMP_LOGFILE:-}"
+        fi
+        exit 1
+        ;;
+    stop)
+        if running; then
+            kill -TERM "$pid"
+            for attempt in $(seq 1 25); do
+                if ! running; then break; fi
+                sleep 0.2
+            done
+            if running; then kill -KILL "$pid"; fi
+        fi
+        rm -f -- "$pid_file" "$socket"
+        ;;
+    status)
+        if running && [ -S "$socket" ]; then exit 0; fi
+        exit 3
+        ;;
+    *) exit 1 ;;
+esac

@@ -1,0 +1,60 @@
+name: Build fnOS FPK
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fpk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Prepare locked dependencies
+        run: python prepare_build.py
+      - name: Build native x86_64 package
+        id: package
+        env:
+          START_RUN_NUMBER: ${{ vars.BUILD_START_RUN_NUMBER || '1' }}
+        run: python build_fpk.py .upstream/fnpack --lean --build-number "$GITHUB_RUN_NUMBER" --start-run-number "$START_RUN_NUMBER"
+      - name: Check native runtime and package
+        run: python verify_runtime.py
+      - name: Calculate checksum
+        run: sha256sum dist/*.fpk > dist/SHA256SUMS
+      - name: Upload install package
+        uses: actions/upload-artifact@v7
+        with:
+          name: smzdm-checkin-${{ steps.package.outputs.version }}-x86_64
+          path: dist/
+          if-no-files-found: error
+          compression-level: 0
+      - name: Publish default-branch build
+        if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          APP_VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          tag="v${APP_VERSION}"
+          printf 'Commit %s\n\nDownload the x86_64 FPK asset and install through fnOS App Center.\n' "$GITHUB_SHA" > release-notes.txt
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/*.fpk dist/SHA256SUMS --clobber
+          else
+            gh release create "$tag" dist/*.fpk dist/SHA256SUMS --target "$GITHUB_SHA" --title "$APP_VERSION" --notes-file release-notes.txt --latest
+          fi

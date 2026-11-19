@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>什么值得买签到</title>
+  <link rel="stylesheet" href="/app/smzdm-checkin/style.css">
+  <script defer src="/app/smzdm-checkin/app.js"></script>
+</head>
+<body>
+  <main>
+    <header class="page-header">
+      <div class="brand"><span class="mark" aria-hidden="true">✓</span><h1>什么值得买签到</h1></div>
+      <button id="add" type="button" class="primary" disabled>添加账号</button>
+    </header>
+    <p id="status" class="feedback" role="status"></p>
+    <section aria-labelledby="accounts-heading">
+      <h2 id="accounts-heading">账号</h2>
+      <div id="accounts" class="accounts"><p class="empty">正在加载账号…</p></div>
+    </section>
+    <section class="history" aria-labelledby="history-heading">
+      <div class="history-header"><h2 id="history-heading">签到记录</h2><button id="clear-history" type="button" disabled>清空记录</button></div>
+      <ul id="history"></ul>
+      <p id="history-empty" class="empty">暂无签到记录</p>
+    </section>
+  </main>
+  <dialog id="editor">
+    <form id="account-form">
+      <h2 id="editor-title">添加账号</h2>
+      <label>账号名称<input name="label" required maxlength="40" placeholder="例如 我的账号"></label>
+      <label>抓包设备<select name="platform">
+        <option value="auto">自动识别</option>
+        <option value="iphone">iPhone / iPad</option>
+        <option value="android">Android</option>
+      </select></label>
+      <div class="credential-field">
+        <div class="credential-heading">
+          <label for="smzdm-cookie-value">App Cookie</label>
+          <button id="smzdm-cookie-visibility" class="visibility-button" type="button" aria-label="显示 Cookie" title="显示 Cookie" aria-controls="smzdm-cookie-value" aria-pressed="false">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/>
+              <circle cx="12" cy="12" r="3"/>
+              <path class="eye-slash" d="m3 3 18 18" hidden/>
+            </svg>
+          </button>
+        </div>
+        <input id="smzdm-cookie-value" class="credential-input" name="cookie" type="password" maxlength="16000" autocomplete="off" spellcheck="false" placeholder="粘贴 App 请求的完整 Cookie">
+      </div>
+      <label id="sk-field">SK（Android 可选）<input name="sk" type="password" maxlength="1024" autocomplete="off" spellcheck="false" placeholder="同一设备的签到请求 SK"></label>
+      <label class="toggle"><input name="scheduled" type="checkbox"> 每天自动签到</label>
+      <label id="time-field">签到时间（北京时间）<input name="daily_time" type="time" value="09:30"></label>
+      <label>Bark 通知<select name="bark_mode">
+        <option value="off">关闭</option>
+        <option value="all">成功和失败都通知</option>
+        <option value="failure">仅失败时通知</option>
+      </select></label>
+      <label id="bark-target-field" hidden>Bark 设备 Key 或推送地址<input name="bark_push" type="text" maxlength="2048" autocomplete="off" spellcheck="false" placeholder="多个目标用英文逗号分隔"></label>
+      <p id="form-status" class="feedback" role="status"></p>
+      <div class="actions"><button id="cancel" type="button">取消</button><button type="submit" class="primary">保存</button></div>
+    </form>
+  </dialog>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  ".url": {
+    "smzdm-checkin.main": {
+      "title": "什么值得买签到",
+      "icon": "images/icon_{0}.png",
+      "type": "iframe",
+      "protocol": "",
+      "url": "/app/smzdm-checkin/",
+      "gatewayPrefix": "/app/smzdm-checkin",
+      "gatewaySocket": "app.sock",
+      "allUsers": false,
+      "control": {
+        "accessPerm": "readonly"
+      }
+    }
+  }
+}
