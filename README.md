@@ -16,7 +16,8 @@ Cookie 必须包含：
 
 ## 界面
 
-
+![pic2](./smzdm-checkin/pic2.png)
+![pic1](./smzdm-checkin/pic1.png)
 
 ## 来源与许可
 
