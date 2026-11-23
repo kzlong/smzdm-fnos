@@ -44,6 +44,7 @@ class DailyTaskExecutor:
         response_payload = self.smzdm_client.post("/task/list_v2")
         task_payloads = _extract_task_payloads(response_payload)
         task_report = self.execute_task_payloads(task_payloads)
+        response_payload = self.smzdm_client.post("/task/list_v2")
         task_report.items.extend(self._claim_available_activity_rewards(response_payload))
         logger.info(
             f"每日任务完成 {task_report.completed_count}, "

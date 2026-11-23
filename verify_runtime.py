@@ -28,7 +28,9 @@ def main():
         sys.path[:0] = [str(target / "app"), str(target / "app/vendor")]
 
         import httpx
-        from service import CheckinService, checkin, push_bark
+        from service import CheckinService, checkin, push_bark, run_optional_tasks
+        from smzdm_bot.exceptions import APIError
+        from smzdm_bot.models import LotteryResult, TaskReport, TaskItemResult, TaskOutcome
         from smzdm_bot.protocol import generate_security_key
 
         expected_sk = generate_security_key("123", "demo-device")
@@ -47,6 +49,28 @@ def main():
         with patch("httpx.post", return_value=httpx.Response(200, json={"code": 200})):
             assert push_bark({"bark_mode": "all", "bark_push": "demo", "label": "Demo"}, "auto", "ok", True) == "Bark 已推送"
 
+        report = TaskReport("每日任务", [TaskItemResult("浏览文章", TaskOutcome.COMPLETED)])
+        options = {"extra_rewards": True, "daily": True, "lottery": True, "follow": False}
+        order = []
+        with patch("service.wait_for_random_delay"), \
+                patch("service.claim_extra_checkin_reward", side_effect=lambda _: order.append("reward") or True), \
+                patch("service.DailyTaskExecutor") as daily, \
+                patch("service.perform_task_lottery", side_effect=lambda _: order.append("lottery") or LotteryResult(success=True, message="奖品")), \
+                patch("service.enter_free_crowd_lotteries", side_effect=lambda _: order.append("crowd") or 2):
+            daily.return_value.execute.side_effect = lambda: order.append("daily") or report
+            lines = run_optional_tasks(object(), options)
+            assert order == ["reward", "daily", "lottery", "crowd"]
+            assert daily.call_args.args[1].enable_follow_tasks is False
+            assert "2" in lines[-1] and "奖品" in lines[-2]
+            assert run_optional_tasks(object(), dict.fromkeys(options, False)) == []
+
+        with patch("service.wait_for_random_delay"), \
+                patch("service.perform_daily_checkin", side_effect=APIError("今日已签到", error_code=4)), \
+                patch("service.claim_extra_checkin_reward", return_value=True) as reward:
+            message, success = checkin({"cookie": "sess=demo", "platform": "iphone", "sk": ""})
+            assert success and "今日已签到" in message and "已领取" in message
+            reward.assert_called_once()
+
         directory = target / "data"
         directory.mkdir()
         with closing(sqlite3.connect(directory / "checkin.sqlite3")) as db:
@@ -58,7 +82,9 @@ def main():
         service = CheckinService(directory)
         try:
             assert service.snapshot()["accounts"][0]["cookie"] == "sess=demo"
-            service.save({"id": 1, "label": "Demo", "platform": "iphone", "bark_mode": "all", "bark_push": "demo"})
+            assert service.snapshot()["accounts"][0]["task_options"]["daily"] is False
+            service.save({"id": 1, "label": "Demo", "platform": "iphone", "bark_mode": "all", "bark_push": "demo", "task_options": options})
+            assert service.snapshot()["accounts"][0]["task_options"] == options
             with service.connect() as db:
                 account = dict(db.execute("SELECT * FROM accounts WHERE id=1").fetchone())
             with patch("service.checkin", return_value=("ok", True)), patch("service.push_bark", return_value="Bark 已推送"):

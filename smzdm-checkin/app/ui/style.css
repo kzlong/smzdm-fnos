@@ -27,7 +27,7 @@ section { margin-top: 25px; }
 ul { list-style: none; padding: 0; margin: 0; }
 li { display: grid; grid-template-columns: minmax(135px, 1fr) 2fr; gap: 8px 18px; border-top: 1px solid #e3eae5; padding: 12px 0; }
 li time { color: #53685e; font-size: 13px; }
-li .message { overflow-wrap: anywhere; }
+li .message { overflow-wrap: anywhere; white-space: pre-line; }
 li .ok { color: #245c49; }
 li .failed { color: #9b3535; }
 dialog { border: 1px solid #c8d8cd; border-radius: 16px; padding: 24px; width: min(440px, calc(100% - 32px)); color: inherit; }
@@ -45,4 +45,6 @@ dialog .actions { justify-content: end; margin-top: 19px; }
 .credential-heading label { display: block; margin: 0; }
 .visibility-button { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 32px; padding: 4px; border: 0; background: transparent; color: #53685e; }
 .credential-field .credential-input { display: block !important; visibility: visible !important; opacity: 1 !important; width: 100%; min-height: 42px; border: 1px solid #aebfb5; border-radius: 8px; padding: 9px 10px; background: white; color: #172c26; }
+.task-options { margin: 16px 0; padding: 8px 12px 12px; border: 1px solid #cedbd4; border-radius: 9px; }
+.task-options legend { padding: 0 5px; font-weight: 600; font-size: 14px; }
 @media (max-width: 620px) { main { padding: 22px 15px; } .card { align-items: start; flex-direction: column; } li { grid-template-columns: 1fr; } }

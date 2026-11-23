@@ -63,6 +63,11 @@ function openEditor(account = null) {
   fields.sk.placeholder = account ? "同时更新 Cookie 时，留空自动生成 SK" : "同一设备的签到请求 SK";
   fields.scheduled.checked = Boolean(account?.daily_time);
   fields.daily_time.value = account?.daily_time || "09:30";
+  fields.extra_rewards.checked = account?.task_options?.extra_rewards ?? true;
+  fields.lottery_tasks.checked = account?.task_options?.lottery ?? false;
+  fields.daily_tasks.checked = account?.task_options?.daily ?? false;
+  fields.follow_tasks.checked = account?.task_options?.follow ?? true;
+  updateDailyTasks();
   fields.bark_mode.value = account?.bark_mode ?? "off";
   fields.bark_push.value = account?.bark_push ?? "";
   fields.bark_push.placeholder = "多个目标用英文逗号分隔";
@@ -82,6 +87,10 @@ function updatePlatformField() {
 
 function updateBarkField() {
   document.querySelector("#bark-target-field").hidden = fields.bark_mode.value === "off";
+}
+
+function updateDailyTasks() {
+  document.querySelector("#follow-field").hidden = !fields.daily_tasks.checked;
 }
 
 function setCookieVisibility(visible) {
@@ -182,6 +191,7 @@ clearHistory.addEventListener("click", async () => {
 fields.scheduled.addEventListener("change", updateTimeField);
 fields.platform.addEventListener("change", updatePlatformField);
 fields.bark_mode.addEventListener("change", updateBarkField);
+fields.daily_tasks.addEventListener("change", updateDailyTasks);
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (fields.scheduled.checked && !fields.daily_time.value) {
@@ -196,6 +206,8 @@ form.addEventListener("submit", async (event) => {
       id: editing, label: fields.label.value, cookie: fields.cookie.value,
       platform: fields.platform.value, sk: fields.platform.value === "iphone" ? "" : fields.sk.value,
       bark_mode: fields.bark_mode.value, bark_push: fields.bark_mode.value === "off" ? "" : fields.bark_push.value,
+      task_options: { extra_rewards: fields.extra_rewards.checked, lottery: fields.lottery_tasks.checked,
+        daily: fields.daily_tasks.checked, follow: fields.follow_tasks.checked },
       daily_time: fields.scheduled.checked ? fields.daily_time.value : ""
     });
     editor.close();

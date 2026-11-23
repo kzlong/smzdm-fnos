@@ -15,16 +15,20 @@ from urllib.parse import quote, urlsplit
 import httpx
 from loguru import logger
 from smzdm_bot.client import SmzdmClient
-from smzdm_bot.config.models import NotificationConfig, UserConfig
+from smzdm_bot.config.models import NotificationConfig, TaskPolicyConfig, UserConfig
 from smzdm_bot.exceptions import APIError, ConfigurationError
 from smzdm_bot.notifications.channels import BarkChannel, bark_targets
 from smzdm_bot.protocol import parse_cookie_header
 from smzdm_bot.tasks.checkin import claim_extra_checkin_reward, perform_daily_checkin
+from smzdm_bot.tasks.daily import DailyTaskExecutor
+from smzdm_bot.tasks.execution import wait_for_random_delay
+from smzdm_bot.tasks.lottery import enter_free_crowd_lotteries, perform_task_lottery
 
 
 PREFIX = "/app/smzdm-checkin"
 SHANGHAI = timezone(timedelta(hours=8))
 UI = Path(__file__).resolve().parent / "ui"
+TASK_DEFAULTS = {"extra_rewards": True, "lottery": False, "daily": False, "follow": True}
 ASSETS = {
     "": ("index.html", "text/html; charset=utf-8"),
     "/": ("index.html", "text/html; charset=utf-8"),
@@ -85,16 +89,17 @@ def checkin(account):
         cookie = f"{cookie}; device_smzdm={platform}"
     try:
         with CheckinClient(UserConfig(cookie=cookie, security_key=sk)) as client:
-            result = perform_daily_checkin(client)
-            if result.consecutive_days < 1:
-                return "无法确认签到结果，请在 App 查看", False
-            message = f"签到成功 · 连签 {result.consecutive_days} 天"
             try:
-                if claim_extra_checkin_reward(client):
-                    message += " · 已领取额外连签奖励"
-            except (APIError, httpx.HTTPError, ValueError, TypeError):
-                message += " · 额外奖励查询或领取失败"
-            return message, True
+                result = perform_daily_checkin(client)
+                if result.consecutive_days < 1:
+                    return "无法确认签到结果，请在 App 查看", False
+                message = f"签到成功 · 连签 {result.consecutive_days} 天"
+            except APIError as error:
+                if not re.search(r"已.{0,8}签到|重复签到|签到过|签过到", str(error)):
+                    raise
+                message = "今日已签到"
+            options = TASK_DEFAULTS | json.loads(account.get("task_options", "{}"))
+            return "\n".join([message, *run_optional_tasks(client, options)]), True
     except ConfigurationError:
         return "Android 凭证无法生成 SK，请更新 App Cookie 或填写同机 SK", False
     except APIError as error:
@@ -112,6 +117,28 @@ def checkin(account):
         return "网络请求失败，请检查 NAS 网络", False
     except UnicodeError:
         return "签到请求包含无法编码的字符，请重新复制 App Cookie", False
+
+
+def run_optional_tasks(client, options):
+    operations = []
+    if options["extra_rewards"]:
+        operations.append(("连签额外奖励", lambda: "已领取" if claim_extra_checkin_reward(client) else "暂无可领取奖励"))
+    if options["daily"]:
+        policy = TaskPolicyConfig(enable_follow_tasks=options["follow"], enable_activity_reward_claims=True)
+        operations.append(("每日任务", lambda: DailyTaskExecutor(client, policy).execute().to_message()))
+    if options["lottery"]:
+        operations.append(("APP 任务抽奖", lambda: perform_task_lottery(client).message))
+        operations.append(("免费幸运屋", lambda: f"已参与 {enter_free_crowd_lotteries(client)} 个免费抽奖"))
+    results = []
+    for name, operation in operations:
+        try:
+            wait_for_random_delay((2, 5))
+            results.append(f"{name} · {operation()}")
+        except APIError as error:
+            results.append(f"{name} · 请求失败（错误码 {error.error_code or '未知'}）")
+        except Exception as error:
+            results.append(f"{name} · 执行失败（{type(error).__name__}）")
+    return results
 
 
 def validate_bark(value):
@@ -183,6 +210,8 @@ class CheckinService:
             for name, default in (("platform", "auto"), ("bark_push", ""), ("bark_mode", "off")):
                 if name not in columns:
                     db.execute(f"ALTER TABLE accounts ADD COLUMN {name} TEXT NOT NULL DEFAULT '{default}'")
+            if "task_options" not in columns:
+                db.execute("ALTER TABLE accounts ADD COLUMN task_options TEXT NOT NULL DEFAULT '{}'")
 
     @contextmanager
     def connect(self):
@@ -198,12 +227,13 @@ class CheckinService:
     def snapshot(self):
         with self.lock, self.connect() as db:
             accounts = []
-            for row in db.execute("SELECT id, label, daily_time, platform, cookie, sk, bark_push, bark_mode FROM accounts ORDER BY id"):
+            for row in db.execute("SELECT id, label, daily_time, platform, cookie, sk, bark_push, bark_mode, task_options FROM accounts ORDER BY id"):
                 accounts.append({
                     "id": row["id"], "label": row["label"], "daily_time": row["daily_time"],
                     "platform": row["platform"], "running": row["id"] in self.running,
                     "bark_mode": row["bark_mode"],
                     "cookie": row["cookie"], "sk": row["sk"], "bark_push": row["bark_push"],
+                    "task_options": TASK_DEFAULTS | json.loads(row["task_options"]),
                     "detected_platform": device_platform(parse_cookie_header(row["cookie"]), row["platform"]),
                 })
             history = [dict(row) for row in db.execute("""
@@ -221,6 +251,12 @@ class CheckinService:
         bark_push = payload.get("bark_push", "")
         bark_mode = payload.get("bark_mode", "off")
         account_id = payload.get("id")
+        task_options = payload.get("task_options")
+        if task_options is not None:
+            if (not isinstance(task_options, dict) or task_options.keys() - TASK_DEFAULTS.keys()
+                    or any(type(value) is not bool for value in task_options.values())):
+                raise ValueError("任务开关格式无效")
+            task_options = json.dumps(TASK_DEFAULTS | task_options)
         if not all(isinstance(value, str) for value in (label, cookie, sk, daily_time, platform, bark_push, bark_mode)):
             raise ValueError("配置格式无效")
         if bark_mode not in {"off", "all", "failure"}:
@@ -243,20 +279,20 @@ class CheckinService:
                     raise ValueError("请输入 App Cookie")
                 if bark_mode != "off" and not bark_push:
                     raise ValueError("请输入 Bark 设备 Key 或推送地址")
-                db.execute("INSERT INTO accounts(label,cookie,sk,daily_time,platform,bark_push,bark_mode) VALUES (?,?,?,?,?,?,?)",
-                           (label, cookie, sk, daily_time, platform, bark_push, bark_mode))
+                db.execute("INSERT INTO accounts(label,cookie,sk,daily_time,platform,bark_push,bark_mode,task_options) VALUES (?,?,?,?,?,?,?,?)",
+                           (label, cookie, sk, daily_time, platform, bark_push, bark_mode, task_options or '{}'))
                 return
             self.ensure_idle(account_id)
-            previous = db.execute("SELECT cookie,sk,bark_push FROM accounts WHERE id=?", (account_id,)).fetchone()
+            previous = db.execute("SELECT cookie,sk,bark_push,task_options FROM accounts WHERE id=?", (account_id,)).fetchone()
             if not previous:
                 raise ValueError("账号已删除")
             if bark_mode != "off":
                 bark_push = bark_push or previous["bark_push"]
                 if not bark_push:
                     raise ValueError("请输入 Bark 设备 Key 或推送地址")
-            db.execute("UPDATE accounts SET label=?,cookie=?,sk=?,daily_time=?,platform=?,bark_push=?,bark_mode=? WHERE id=?",
+            db.execute("UPDATE accounts SET label=?,cookie=?,sk=?,daily_time=?,platform=?,bark_push=?,bark_mode=?,task_options=? WHERE id=?",
                        (label, cookie or previous["cookie"], sk if cookie or sk else previous["sk"],
-                        daily_time, platform, bark_push, bark_mode, account_id))
+                        daily_time, platform, bark_push, bark_mode, task_options or previous["task_options"], account_id))
 
     def ensure_idle(self, account_id):
         if type(account_id) is not int or not 1 <= account_id <= 2**63 - 1:

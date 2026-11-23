@@ -1,5 +1,5 @@
 appname               = smzdm-checkin
-version               = 1.0.0
+version               = 1.0.1
 display_name          = 什么值得买签到
 desc                  = 管理什么值得买账号、每日签到时间和签到记录
 platform              = x86
